@@ -70,7 +70,18 @@ namespace DashTimeserver.Client
 
                     var client = _httpClientFactory.CreateClient();
 
-                    var anchor = await GetBestTimelineAnchorAsync(_url, client, _cts.Token);
+                    TimelineAnchor anchor;
+
+                    try
+                    {
+                        anchor = await GetBestTimelineAnchorAsync(_url, client, _cts.Token);
+                    }
+                    catch
+                    {
+                        // It's fine in some updates fail to be processed.
+                        // We will keep ticking even without network connectivity.
+                        continue;
+                    }
 
                     lock (_lock)
                         _anchor = anchor;
