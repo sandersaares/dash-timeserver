@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata minClientVersion="2.8">
+    <id>Koek</id>
+
+    <!-- Automatically set by release process. -->
+    <version>__VERSIONSTRING__</version>
+
+    <authors>sandersaares</authors>
+    <description>A pile of useful .NET code.</description>
+    <projectUrl>https://github.com/sandersaares/koek</projectUrl>
+    <license type="expression">MIT</license>
+  </metadata>
+  <files>
+    <file src="Koek/bin/Release/net5.0/Koek.*" target="lib/net5.0" />
+  </files>
+</package>

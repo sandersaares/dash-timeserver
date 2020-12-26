@@ -1,0 +1,46 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+      with:
+        lfs: true
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 5.0.101
+    - name: Install dependencies
+      run: dotnet restore
+    - id: make_version_string
+      uses: sandersaares-actions/make-version-string@master
+      with:
+        assemblyInfoPath: Client/AssemblyInfo.cs
+        primaryBranch: 'main'
+    - id: make_nuget_version_string
+      uses: sandersaares-actions/make-nuget-version-string@main
+      with:
+        versionstring: ${{ steps.make_version_string.outputs.versionstring }}
+        releaseType: cb
+    - uses: sandersaares-actions/expand-tokens@master
+      env:
+        VERSIONSTRING: ${{ steps.make_nuget_version_string.outputs.nugetVersionstring }}
+      with:
+        path: DashTimeserver.Client.nuspec
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+    - name: Test
+      run: dotnet test --configuration Release --no-restore --verbosity normal --filter Name\\!~_WindowsOnly
+    - name: Package
+      run: nuget pack DashTimeserver.Client.nuspec
+    - uses: actions/upload-artifact@v2
+      with:
+        name: nupkg
+        path: '*.nupkg'
