@@ -46,3 +46,14 @@ jobs:
         path: '*.nupkg'
     - name: Publish
       run: nuget push -ApiKey ${{ secrets.nuget_api_key }} -Source https://api.nuget.org/v3/index.json *.nupkg
+
+    # Publish server according to publish profile.
+    - name: dotnet publish
+      run: dotnet publish -c Release -o ${{env.DOTNET_ROOT}}/myapp Server
+    - name: Deploy to Azure Web App
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: 'timeserver'
+        slot-name: 'production'
+        publish-profile: ${{ secrets.AzureAppService_PublishProfile }}
+        package: ${{env.DOTNET_ROOT}}/myapp
