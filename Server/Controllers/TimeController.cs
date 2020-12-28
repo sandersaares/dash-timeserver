@@ -1,4 +1,5 @@
 ﻿using Koek;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using System;
 
@@ -21,6 +22,15 @@ namespace DashTimeserver.Server.Controllers
         }
 
         private readonly ITimeSource _timeSource;
+
+        [HttpGet("")]
+        public void Get()
+        {
+            Response.StatusCode = 400;
+            Response.ContentType = "text/plain";
+
+            Response.WriteAsync("Incomplete timestamp request URL. See dash-timeserver readme for instructions.");
+        }
 
         /// <summary>
         /// Gets the current time as a string.
