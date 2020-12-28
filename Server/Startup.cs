@@ -30,6 +30,14 @@ namespace DashTimeserver.Server
                 app.UseDeveloperExceptionPage();
             }
 
+            // Allow everything in CORS because players tend to need this.
+            app.UseCors(builder =>
+            {
+                builder.AllowAnyOrigin();
+                builder.AllowAnyHeader();
+                builder.AllowAnyMethod();
+            });
+
             app.UseRouting();
             app.UseHttpMetrics();
 
