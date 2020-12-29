@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Prometheus;
+using Prometheus.Experimental;
 
 namespace DashTimeserver.Server
 {
@@ -48,12 +49,19 @@ namespace DashTimeserver.Server
                 endpoints.MapControllers();
                 endpoints.MapMetrics();
             });
+
+            LocalTimeMetrics.Register();
+
+            var trueTimeMetrics = app.ApplicationServices.GetRequiredService<TrueTimeMetrics>();
+            trueTimeMetrics.Register();
         }
 
         public void ConfigureContainer(ContainerBuilder builder)
         {
             //builder.RegisterType<LocalTimeSource>().As<ITimeSource>().SingleInstance();
             builder.RegisterType<NtpTimeSource>().As<ITimeSource>().SingleInstance();
+
+            builder.RegisterType<TrueTimeMetrics>().SingleInstance();
         }
     }
 }
