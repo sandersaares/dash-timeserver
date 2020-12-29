@@ -52,7 +52,8 @@ namespace DashTimeserver.Server
 
         public void ConfigureContainer(ContainerBuilder builder)
         {
-            builder.RegisterType<LocalTimeSource>().As<ITimeSource>();
+            //builder.RegisterType<LocalTimeSource>().As<ITimeSource>().SingleInstance();
+            builder.RegisterType<NtpTimeSource>().As<ITimeSource>().SingleInstance();
         }
     }
 }

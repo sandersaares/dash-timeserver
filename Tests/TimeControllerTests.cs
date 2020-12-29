@@ -1,4 +1,5 @@
 ﻿using Autofac;
+using DashTimeserver.Server;
 using DashTimeserver.Server.Controllers;
 using Koek;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -43,7 +44,7 @@ namespace DashTimeserver.Tests
             var instance = _scope.Resolve<TimeController>();
 
             var time = instance.CurrentTimeAsXsDateTime(offsetSeconds: null);
-            var expected = DefaultTime.ToString(TimeController.FormatString);
+            var expected = DefaultTime.ToString(Constants.XsDatetimeCompatibleFormatString);
 
             Assert.AreEqual(expected, time);
         }
@@ -55,19 +56,19 @@ namespace DashTimeserver.Tests
 
             // Positive offset
             var time = instance.CurrentTimeAsXsDateTime(offsetSeconds: 3.3);
-            var expected = DefaultTime.AddSeconds(3.3).ToString(TimeController.FormatString);
+            var expected = DefaultTime.AddSeconds(3.3).ToString(Constants.XsDatetimeCompatibleFormatString);
 
             Assert.AreEqual(expected, time);
 
             // Negative offset
             time = instance.CurrentTimeAsXsDateTime(offsetSeconds: -3.3);
-            expected = DefaultTime.AddSeconds(-3.3).ToString(TimeController.FormatString);
+            expected = DefaultTime.AddSeconds(-3.3).ToString(Constants.XsDatetimeCompatibleFormatString);
 
             Assert.AreEqual(expected, time);
 
             // No offset but parameter specified.
             time = instance.CurrentTimeAsXsDateTime(offsetSeconds: 0);
-            expected = DefaultTime.ToString(TimeController.FormatString);
+            expected = DefaultTime.ToString(Constants.XsDatetimeCompatibleFormatString);
 
             Assert.AreEqual(expected, time);
         }

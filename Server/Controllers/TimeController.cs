@@ -12,10 +12,6 @@ namespace DashTimeserver.Server.Controllers
     [ApiController]
     public sealed class TimeController : ControllerBase
     {
-        // String must conform to the xs:dateTime schema from XML.
-        // Time server must be referenced in DASH MPD as urn:mpeg:dash:utc:http-xsdate:2014.
-        public const string FormatString = "yyyy-MM-ddTHH:mm:ss.fffZ";
-
         public TimeController(ITimeSource timeSource)
         {
             _timeSource = timeSource;
@@ -42,7 +38,7 @@ namespace DashTimeserver.Server.Controllers
         [HttpGet("xsdatetime")]
         public string CurrentTimeAsXsDateTime([FromQuery] double? offsetSeconds)
         {
-            return GetTime(offsetSeconds).ToString(FormatString);
+            return GetTime(offsetSeconds).ToString(Constants.XsDatetimeCompatibleFormatString);
         }
 
         /// <summary>
