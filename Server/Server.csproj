@@ -18,7 +18,7 @@
     <PackageReference Include="NLog" Version="4.7.6" />
     <PackageReference Include="NLog.Web.AspNetCore" Version="4.9.3" />
     <PackageReference Include="prometheus-net.AspNetCore" Version="4.1.1" />
-    <PackageReference Include="prometheus-net.Experimental" Version="1.0.0-cb-201229060718-54d5401" />
+    <PackageReference Include="prometheus-net.Experimental" Version="1.0.0" />
   </ItemGroup>
 
   <ItemGroup>
