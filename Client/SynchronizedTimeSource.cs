@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Threading;
@@ -13,6 +15,8 @@ namespace DashTimeserver.Client
     /// </summary>
     /// <remarks>
     /// Thread-safe.
+    /// 
+    /// Supports any MPEG-DASH timeserver that emits xs:datetime format timestamps with at exactly millisecond precision.
     /// 
     /// The first sync is required to succeed. Any background updates may fail and be silently ignored.
     /// </remarks>
@@ -31,10 +35,10 @@ namespace DashTimeserver.Client
             }
         }
 
-        private SynchronizedTimeSource(TimelineAnchor anchor, Uri url, IHttpClientFactory httpClientFactory)
+        private SynchronizedTimeSource(TimelineAnchor anchor, Uri xsdatetimeUrl, IHttpClientFactory httpClientFactory)
         {
             _anchor = anchor;
-            _url = url;
+            _xsdatetimeUrl = xsdatetimeUrl;
             _httpClientFactory = httpClientFactory;
 
             _backgroundUpdateTask = Task.Run(PerformBackgroundUpdatesAsync);
@@ -51,7 +55,7 @@ namespace DashTimeserver.Client
 
         private TimelineAnchor _anchor;
 
-        private readonly Uri _url;
+        private readonly Uri _xsdatetimeUrl;
         private readonly IHttpClientFactory _httpClientFactory;
 
         private readonly object _lock = new object();
@@ -74,7 +78,7 @@ namespace DashTimeserver.Client
 
                     try
                     {
-                        anchor = await GetBestTimelineAnchorAsync(_url, client, _cts.Token);
+                        anchor = await GetTimelineAnchorAsync(_xsdatetimeUrl, client, _cts.Token);
                     }
                     catch
                     {
@@ -97,22 +101,18 @@ namespace DashTimeserver.Client
         /// 
         /// The method returns once synchronization has been established.
         /// </summary>
-        /// <param name="timeserverUrl">The root URL to the timserver, without any path/suffix. Query string parameters will be preserved.</param>
+        /// <param name="xsdatetimeUrl">A URL that returns the current time in xs:datetime format.</param>
         /// <param name="httpClientFactory">Provides instances of HttpClients on request.</param>
         /// <param name="cancel" />
-        public static async Task<SynchronizedTimeSource> CreateAsync(Uri timeserverUrl, IHttpClientFactory httpClientFactory, CancellationToken cancel)
+        public static async Task<SynchronizedTimeSource> CreateAsync(Uri xsdatetimeUrl, IHttpClientFactory httpClientFactory, CancellationToken cancel)
         {
-            // We want the tick-based API, as it is simpler to parse.
-            // We preserve the query string since it may carry useful debugging parameters like offset.
-            var url = new Uri(new Uri(timeserverUrl, "utcticks"), timeserverUrl.Query);
-
             var client = httpClientFactory.CreateClient();
 
-            // Make a request and throw away the result, to ensure everything is warmed up.
-            await GetTimelineAnchorAsync(url, client, cancel);
+            // Make a request and throw away the result, to ensure everything in the pipe is warmed up.
+            await GetAdjustmentAsync(xsdatetimeUrl, client, cancel);
 
             // Now do a proper request to synchronize.
-            return new SynchronizedTimeSource(await GetBestTimelineAnchorAsync(url, client, cancel), url, httpClientFactory);
+            return new SynchronizedTimeSource(await GetTimelineAnchorAsync(xsdatetimeUrl, client, cancel), xsdatetimeUrl, httpClientFactory);
         }
 
         private struct TimelineAnchor
@@ -128,40 +128,46 @@ namespace DashTimeserver.Client
             /// </summary>
             public long SwTicks { get; }
 
-            /// <summary>
-            /// The RTT of the synchronization attempt that produced this result.
-            /// </summary>
-            public TimeSpan Rtt { get; }
-
-            public TimelineAnchor(DateTimeOffset time, long swTicks, TimeSpan rtt)
+            public TimelineAnchor(DateTimeOffset time)
             {
                 Time = time;
-                SwTicks = swTicks;
-                Rtt = rtt;
+                SwTicks = Stopwatch.GetTimestamp();
             }
         }
 
-        private static async Task<TimelineAnchor> GetBestTimelineAnchorAsync(Uri utcticksUrl, HttpClient client, CancellationToken cancel)
+        private static async Task<TimelineAnchor> GetTimelineAnchorAsync(Uri xsdatetimeUrl, HttpClient client, CancellationToken cancel)
         {
-            // We make 3 parallel requests, and keep the one with minimum RTT, in a hope to throw away any outliers that were slowed down for no good reason.
+            const int batchCount = 3;
+            const int requestsPerBrach = 3;
+
+            // We make N batches of M parallel requests, and take the avereage adjustment from all of these as our adjustment to apply.
             // Not necessarily the best strategy but perhaps it helps get rid of the greatest sources of error.
-            var attempts = new[]
+            var adjustments = new List<TimeSpan>(batchCount * requestsPerBrach);
+
+            for (var batch = 0; batch < batchCount; batch++)
             {
-                GetTimelineAnchorAsync(utcticksUrl, client, cancel),
-                GetTimelineAnchorAsync(utcticksUrl, client, cancel),
-                GetTimelineAnchorAsync(utcticksUrl, client, cancel),
-            };
+                var attempts = new[]
+                {
+                    GetAdjustmentAsync(xsdatetimeUrl, client, cancel),
+                    GetAdjustmentAsync(xsdatetimeUrl, client, cancel),
+                    GetAdjustmentAsync(xsdatetimeUrl, client, cancel),
+                };
 
-            await Task.WhenAll(attempts);
+                foreach (var attempt in attempts)
+                    adjustments.Add(await attempt);
+            }
 
-            return attempts.OrderBy(x => x.Result.Rtt).First().Result;
+            var averageAdjustment = TimeSpan.FromSeconds(adjustments.Select(x => x.TotalSeconds).Average());
+            var trueTime = DateTimeOffset.UtcNow + averageAdjustment;
+
+            return new TimelineAnchor(trueTime);
         }
 
-        private static async Task<TimelineAnchor> GetTimelineAnchorAsync(Uri utcticksUrl, HttpClient client, CancellationToken cancel)
+        private static async Task<TimeSpan> GetAdjustmentAsync(Uri xsdatetimeUrl, HttpClient client, CancellationToken cancel)
         {
             var rtt = Stopwatch.StartNew();
 
-            var response = await client.GetAsync(utcticksUrl, cancel);
+            var response = await client.GetAsync(xsdatetimeUrl, cancel);
             response.EnsureSuccessStatusCode();
 
             var length = response.Content.Headers.ContentLength;
@@ -175,20 +181,24 @@ namespace DashTimeserver.Client
             var content = await response.Content.ReadAsStringAsync();
             rtt.Stop();
 
-            var localSwTicks = Stopwatch.GetTimestamp();
+            if (!TryParseXsdatetime(content, out var trueTimeRemote))
+                throw new NotSupportedException($"Received successful response that did not contain a valid xs:datetime in any of our supported formats.");
 
-            if (!long.TryParse(content, out var trueTimeTicks))
-                throw new NotSupportedException($"Received successful response that did not contain a valid tick count.");
-
-            var trueTime = new DateTimeOffset(trueTimeTicks, TimeSpan.Zero);
+            var localTime = DateTimeOffset.UtcNow;
 
             // Since it took half the RTT for the response to arrive, we are approximately half the RTT ahead of what the tick count says.
             var rttAdjustmentSeconds = rtt.Elapsed.TotalSeconds / 2;
-            var rttAdjustmentSwTicks = (long)(rttAdjustmentSeconds * Stopwatch.Frequency);
+            var rttAdjustment = TimeSpan.FromSeconds(rttAdjustmentSeconds);
+            var trueTime = trueTimeRemote + rttAdjustment;
 
-            var adjustedTrueTime = trueTime.AddSeconds(rttAdjustmentSeconds);
-
-            return new TimelineAnchor(adjustedTrueTime, localSwTicks + rttAdjustmentSwTicks, rtt.Elapsed);
+            // This is the adjustment needed to go from local time to true time.
+            return trueTime - localTime;
         }
+
+        // String must conform to the xs:dateTime schema from XML.
+        // Time server must be referenced in DASH MPD as urn:mpeg:dash:utc:http-xsdate:2014.
+        public const string XsDatetimeCompatibleFormatString = "yyyy-MM-ddTHH:mm:ss.fffZ";
+
+        private static bool TryParseXsdatetime(string timestamp, out DateTimeOffset result) => DateTimeOffset.TryParseExact(timestamp, XsDatetimeCompatibleFormatString, CultureInfo.InvariantCulture, DateTimeStyles.None, out result);
     }
 }

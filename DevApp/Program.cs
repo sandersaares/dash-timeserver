@@ -10,7 +10,7 @@ namespace DevApp
 
         static async Task Main(string[] args)
         {
-            var baseUrl = new Uri("http://localhost:64868/");
+            var baseUrl = new Uri("http://localhost:64868/xsdatetime");
             var factory = new HttpClientFactory();
 
             var sts = await SynchronizedTimeSource.CreateAsync(baseUrl, factory, default);
